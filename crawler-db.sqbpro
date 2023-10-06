@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?><sqlb_project><db path="/home/ngeht/Рабочий стол/ПЗвСИИ-2023.09[студентам]/lab1-2/crawler-db.db" readonly="0" foreign_keys="1" case_sensitive_like="0" temp_store="0" wal_autocheckpoint="1000" synchronous="2"/><attached/><window><main_tabs open="structure browser pragmas query" current="1"/></window><tab_structure><column_width id="0" width="300"/><column_width id="1" width="0"/><column_width id="2" width="100"/><column_width id="3" width="1314"/><column_width id="4" width="0"/><expanded_item id="0" parent="1"/><expanded_item id="1" parent="1"/><expanded_item id="2" parent="1"/><expanded_item id="3" parent="1"/></tab_structure><tab_browse><current_table name="4,7:mainURLList"/><default_encoding codec=""/><browse_table_settings><table schema="main" name="URLList" show_row_id="0" encoding="" plot_x_axis="" unlock_view_pk="_rowid_"><sort/><column_widths><column index="1" value="55"/><column index="2" value="300"/></column_widths><filter_values/><conditional_formats/><row_id_formats/><display_formats/><hidden_columns/><plot_y_axes/><global_filter/></table></browse_table_settings></tab_browse><tab_sql><sql name="SQL 1">create table if not EXISTS wordList  (
+row_id integer PRIMARY KEY,
+word TEXT,
+isFiltered INTEGER
+);
+
+create table if not EXISTS URLList  (
+row_id integer primary key,
+URL text
+);
+
+create table if not EXISTS wordLocation  (
+row_id integer primary key,
+wordId integer not null,
+URLId integer,
+location int,
+FOREIGN key (wordId) REFERENCES wordList(row_id),
+FOREIGN key (URLId) REFERENCES URLList(row_id)
+);
+
+create table if not EXISTS linkBetweenURL  (
+row_id int PRIMARY key,
+FromURL_id int,
+ToURL_id int,
+FOREIGN KEY (FromURL_id) REFERENCES URLList(row_id),
+FOREIGN KEY (ToURL_id) REFERENCES URLList(row_id)
+);
+
+create table if not EXISTS linkWord  (
+row_id int PRIMARY key,
+wordId int,
+linkId int,
+FOREIGN key (wordId) REFERENCES wordList(row_id),
+FOREIGN key (linkId) REFERENCES linkBetweenURL(row_id)
+);</sql><current_tab id="0"/></tab_sql></sqlb_project>

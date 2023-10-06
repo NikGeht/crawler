@@ -32,6 +32,7 @@ class Crawler(object):
             location = 0
             
             for i in text:
+                i.lower()
                 if i not in notAllowedWord:
                     worded = self.getEntryId('wordlist', 'word', i, 0)
                 else:
@@ -40,18 +41,42 @@ class Crawler(object):
                 location = location + 1
                 self.conn.commit()
             
+            linktext = self.cursor.execute(f'select linktext from linkbetweenurl where fromurl_id={urlid}').fetchall()
+            for rows in linktext:
+                # print("LINKTEXT ----> ", linktext)
+                for text in rows:
+                    for i in text.split():
+                        wordId = self.cursor.execute('select row_id from wordlist where word = ?', (i,)).fetchone()   
+                        print("WORDID ----> ", wordId) 
+                        if wordId is None:
+                            print('NONE FOUND: ', wordId, "--- TEXT: ", i)
+                        else:
+                            self.cursor.execute('insert into linkword (wordId, linkId) values (?, ?)', (wordId[0], urlid,))
+                            self.conn.commit()
+            
 
         
 
-    def getTextOnly(self, soup):
-        for script in soup(["script", "style"]):
-            script.extract()    # rip it out
+    def getTextOnly(self, soup: BeautifulSoup):
+        text = soup.find_all(text=True)
+        text_out = ''
+        blacklist = [
+            '[document]',
+            'noscript',
+            'header',
+            'html',
+            'meta',
+            'head',
+            'input',
+            'script',
+            'style',
+        ]
 
-        # get text
-        raw_text = soup.get_text()
-        text = self.separateWords(raw_text)
-
-        return text
+        for t in text:
+            if t.parent.name not in blacklist:
+                text_out += '{} '.format(t)
+        text_out = self.separateWords(text_out)
+        return text_out
 
     def separateWords(self, text):
         # break into lines and remove leading and trailing space on each
@@ -62,8 +87,7 @@ class Crawler(object):
         text = []
         for chunk in lines:
             if chunk:
-                text.append(chunk)
-        print(text)
+                text.append(chunk.lower())
         return text
 
 
@@ -89,14 +113,14 @@ class Crawler(object):
         else:
             return True
 
-    def addLinkRef(self, urlFrom, urlTo):
+    def addLinkRef(self, urlFrom, urlTo, linktext: str):
         # print("ADD LINK REF")
         # print(urlFrom, "---", urlTo)
         urlFrom_id = self.cursor.execute('SELECT row_id from URLList WHERE URL= ?', (urlFrom,)).fetchone()
         urlTo_id = self.cursor.execute('SELECT row_id from URLList WHERE URL= ?', (urlTo,)).fetchone()
         # print(urlFrom_id, "---", urlTo_id)
         if not self.cursor.execute('SELECT * from linkBetweenURL WHERE FromURL_id = ? AND ToURL_id = ?', (urlFrom_id[0], urlTo_id[0],)).fetchone():
-            self.cursor.execute('INSERT INTO linkBetweenURL (FromURL_id, ToURL_id) VALUES(?,?)', (urlFrom_id[0], urlTo_id[0],))
+            self.cursor.execute('INSERT INTO linkBetweenURL (FromURL_id, ToURL_id, linktext) VALUES(?,?,?)', (urlFrom_id[0], urlTo_id[0], linktext,))
             self.conn.commit()
         else:
             pass
@@ -110,52 +134,63 @@ class Crawler(object):
             print("currDepth: ", currDepth)
             tempList = []
             for url in urlList:
-                html_doc = requests.get(url).text
-                soup = BeautifulSoup(html_doc, 'html.parser')
-                for script in soup(["script", "style"]):
-                    script.extract()
+                html_page = requests.get(url).content
+                soup = BeautifulSoup(html_page, 'html.parser')
                 urlList.pop()
+                print(url)
                 for a in soup.find_all('a', href=True, ):
                     urlTo = ""
                     if a['href'][0:8] == 'https://' or a['href'][0:7] == 'http://':
                         urlTo = a['href']
                         tempList.append(a['href'])
                         
-                        
-                        if not self.isIndexed(url):
-                            self.addURlList(url)
                     else:
                         urlTo = urljoin(url, a['href'])
                         tempList.append(urlTo)
-                        
-                        if self.isIndexed(url) == False:
+                    
+                    check_url = self.cursor.execute('select row_id from urllist where URL= ?', (url, )).fetchone()
+                    check_urlTo = self.cursor.execute('select row_id from urllist where URL= ?', (urlTo, )).fetchone()
+                    linktext = str(a.text.lower()).split()
+                    linktext = ' '.join(linktext)
+                    if linktext != ' ' or linktext != '':
+                        if check_url is None:
                             self.addURlList(url)
-                    if not self.isIndexed(urlTo):
-                        self.addURlList(urlTo)
-                    self.addLinkRef(urlFrom=url, urlTo=urlTo)
-                    self.addToIndex(soup, url)
-                    if a.contents:
-                        linktext = a.text.split()
-                        urlid = self.cursor.execute('select row_id from urllist where URL= ?', (url, )).fetchone()[0]
-                        print(urlid)
-                        words = []
-                        if linktext is not None:
-                            for text in linktext:
-                                wordId = self.cursor.execute('select row_id from wordlist where word = ?', (text,)).fetchone()[0]
-                                
-                                if wordId is None:
-                                    print('NONE FOUND: ', wordId, "--- TEXT: ", text)
-                                words.append(wordId)
-                            for word in words:
-                                self.cursor.execute('insert into linkword (wordId, linkId) values (?, ?)', (word, urlid,))
-                            self.conn.commit()
-                                
-                        else:
-                            pass
-                        print('LINK WORDS:', words)
+                        if check_urlTo is None:
+                            self.addURlList(urlTo)
+                        
+                        self.addLinkRef(urlFrom=url, urlTo=urlTo, linktext=linktext)
+            
+
+                self.addToIndex(soup, url)
+            urlList = tempList
+                    # words = []
+                    # linktext = a.text.lower()
+                    # link_texts = linktext.split()
+                    # urlid = self.cursor.execute('select row_id from urllist where URL= ?', (url, )).fetchone()[0]
+                    # if linktext is not None:
+                    #     for text in link_texts:
+                    #         wordId = self.cursor.execute('select row_id from wordlist where word = ?', (text,)).fetchone()
+                            
+                    #         if wordId is None:
+                    #             print('NONE FOUND: ', wordId, "--- TEXT: ", text)
+                    #         else:
+                    #             words.append(wordId[0])
+                    #     for word in words:
+                    #         self.cursor.execute('insert into linkword (wordId, linkId) values (?, ?)', (word, urlid,))
+                    #         self.conn.commit()
+                            
+                    # else:
+                    #     pass
+                    # print('LINK WORDS:', words)
+                        
+                    
+                    
+                    
+                    
 
                         # self.cursor.execute('insert into linkword (wordId, linkId) values (?, ?)', (wordId, linkId, ))
-            urlList = tempList    
+                
+               
                 # Получить список тегов а
                 # Обработать тег
                 # Проверить наличие href
@@ -172,7 +207,7 @@ class Crawler(object):
 
         self.cursor.execute('create table if not EXISTS URLList  (row_id integer primary key, URL text);')
         self.cursor.execute('create table if not EXISTS wordLocation  (row_id integer primary key,wordId integer not null,URLId integer,location int,FOREIGN key (wordId) REFERENCES wordList(row_id),FOREIGN key (URLId) REFERENCES URLList(row_id));')
-        self.cursor.execute('create table if not EXISTS linkBetweenURL  (row_id integer PRIMARY key,FromURL_id integer,ToURL_id integer,FOREIGN KEY (FromURL_id) REFERENCES URLList(row_id),FOREIGN KEY (ToURL_id) REFERENCES URLList(row_id));')
+        self.cursor.execute('create table if not EXISTS linkBetweenURL  (row_id integer PRIMARY key,FromURL_id integer,ToURL_id integer, linktext text, FOREIGN KEY (FromURL_id) REFERENCES URLList(row_id),FOREIGN KEY (ToURL_id) REFERENCES URLList(row_id));')
         self.cursor.execute('create table if not EXISTS linkWord  (row_id integer PRIMARY key,wordId int,linkId integer,FOREIGN key (wordId) REFERENCES wordList(row_id),FOREIGN key (linkId) REFERENCES linkBetweenURL(row_id));')
         self.conn.commit()
         
